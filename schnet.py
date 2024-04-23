@@ -59,13 +59,12 @@ def load_data():
 class GaussianSmearing(torch.nn.Module):
     def __init__(
         self,
-        start: float = 0.0,
-        stop: float = 5.0,
-        num_gaussians: int = 50,
+        cutoff: float = 30.0,
+        num_gaussians: int = 300,
     ):
         super().__init__()
-        offset = torch.linspace(start, stop, num_gaussians)
-        self.coeff = -0.5 / (offset[1] - offset[0]).item()**2
+        offset = torch.linspace(0.0, cutoff, num_gaussians)
+        self.coeff = -10
         self.register_buffer('offset', offset)
 
     def forward(self, dist: Tensor) -> Tensor:  # dist = d_{ij} range: 0-7
@@ -83,14 +82,12 @@ class ShiftedSoftplus(torch.nn.Module):
 
 
 class CFConv(MessagePassing):
-    def __init__(self, nn_layers: nn.Sequential, cutoff: float):
+    def __init__(self, nn_layers: nn.Sequential):
         super().__init__(aggr='add')
-        self.cutoff = cutoff
         self.nn = nn_layers
 
     def forward(self, h, edge_index, edge_weight, edge_attr):
-        C = 0.5 * (torch.cos(edge_weight * PI / self.cutoff) + 1.0)
-        W = self.nn(edge_attr) * C.view(-1, 1)
+        W = self.nn(edge_attr)
         x = self.propagate(edge_index, x=h, W=W)  # message -> aggregate -> update
         return x
 
@@ -99,9 +96,8 @@ class CFConv(MessagePassing):
 
 
 class Interaction(nn.Module):
-    def __init__(self, hidden_channels: int, num_gaussians: int, cutoff: float, num_filters: int):
+    def __init__(self, hidden_channels: int, num_gaussians: int, num_filters: int):
         super().__init__()
-        self.cutoff = cutoff
         self.mlp = nn.Sequential(
             nn.Linear(num_gaussians, hidden_channels),
             ShiftedSoftplus(),
@@ -109,7 +105,7 @@ class Interaction(nn.Module):
             ShiftedSoftplus(),
         )
         self.atom_wise = nn.Linear(hidden_channels, hidden_channels)
-        self.conv = CFConv(self.mlp, self.cutoff)
+        self.conv = CFConv(self.mlp)
         self.out = nn.Sequential(
             nn.Linear(hidden_channels, hidden_channels),
             ShiftedSoftplus(),
@@ -142,24 +138,23 @@ class SchNetModel(nn.Module):
         super(SchNetModel, self).__init__()
         # TODO: Define layers and modules here, for instance:
         # self.conv = SomeGeometricLayer()
-        self.hidden_channels = 128
-        self.num_interactions = 6
-        self.num_filters = 128
-        self.num_gaussians = 50
-        self.cutoff = 10.0
-        self.max_num_neighbors = 32
+        self.hidden_channels = 64
+        self.num_interactions = 3
+        self.num_filters = 64
+        self.num_gaussians = 300
+        self.cutoff = 30.0
 
         self.embedding = nn.Embedding(100, self.hidden_channels, padding_idx=0)
         self.interactions = nn.ModuleList()
         for _ in range(self.num_interactions):
-            block = Interaction(self.hidden_channels, self.num_gaussians, self.cutoff, self.num_filters)
+            block = Interaction(self.hidden_channels, self.num_gaussians, self.num_filters)
             self.interactions.append(block)
         self.layers = nn.Sequential(
             nn.Linear(self.hidden_channels, self.hidden_channels // 2),
             ShiftedSoftplus(),
             nn.Linear(self.hidden_channels // 2, 1)
         )
-        self.distance_expansion = GaussianSmearing(0.0, self.cutoff, self.num_gaussians)
+        self.distance_expansion = GaussianSmearing(self.cutoff, self.num_gaussians)
 
         self.reset_parameters()
 
@@ -176,8 +171,7 @@ class SchNetModel(nn.Module):
         pos, z, batch = data.pos, data.z, data.batch
         pos.require_grad = True
 
-        edge_index = radius_graph(pos, r=self.cutoff, batch=batch,
-                                  max_num_neighbors=self.max_num_neighbors)
+        edge_index = radius_graph(pos, r=self.cutoff, batch=batch)
         row, col = edge_index
         edge_weight = (pos[row] - pos[col]).norm(dim=-1)
         edge_attr = self.distance_expansion(edge_weight)
