@@ -84,5 +84,6 @@ def main():
     print("Permutation Invariance:", verify_permutation_invariance(model, sample_data))
     print("Rotation Invariance:", verify_rotation_invariance(model, sample_data))
 
+
 if __name__ == '__main__':
     main()
