@@ -204,7 +204,7 @@ def evaluate_model(model, epoch, loader, device, mean, std):
             total_mae += mae.item()
     loss = total_loss / len(loader)
     mae = total_mae / len(loader)
-    print(f"------------------------------------ Validation {epoch} Loss = {loss:.6f}, MAE = {mae:.6f}")
+    print(f"------------------------------------ Validation {epoch+1} Loss = {loss:.6f}, MAE = {mae:.6f}")
     return loss, mae
 
 
@@ -288,7 +288,7 @@ if not pretrained:
 
         mse[epoch] = total_loss / len(train_loader)
         mae[epoch] = total_mae / len(train_loader)
-        print(f"Training {epoch} Loss = {loss:.6f}, MAE = {mae_e:.6f}, LR = {scheduler.get_last_lr()}")
+        print(f"Training {epoch+1} Loss = {loss:.6f}, MAE = {mae_e:.6f}, LR = {scheduler.get_last_lr()}")
 
         # Evaluate
         mse_test[epoch], mae_test[epoch] = evaluate_model(model, epoch, test_loader, device, mean, std)
