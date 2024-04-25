@@ -5,11 +5,12 @@ from math import pi as PI
 from torch_geometric.datasets import QM9
 from torch_geometric.loader import DataLoader
 from torch import Tensor
-from torch_geometric.nn import GCNConv, global_add_pool, radius_graph, MessagePassing
+from torch_geometric.nn import global_add_pool, radius_graph, MessagePassing
 import pickle
 import os
 import random
 import numpy as np
+
 
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
@@ -85,9 +86,11 @@ class CFConv(MessagePassing):
     def __init__(self, nn_layers: nn.Sequential):
         super().__init__(aggr='add')
         self.nn = nn_layers
+        self.cutoff = 10.0
 
     def forward(self, h, edge_index, edge_weight, edge_attr):
-        W = self.nn(edge_attr)
+        C = 0.5 * (torch.cos(edge_weight * PI / self.cutoff) + 1.0)
+        W = self.nn(edge_attr) * C.view(-1, 1)
         x = self.propagate(edge_index, x=h, W=W)  # message -> aggregate -> update
         return x
 
